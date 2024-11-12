@@ -1,18 +1,23 @@
-.venv
-.cache
+# Entorno virtual
+venv/
+env/
+
+# Variables de entorno
 .env
-*workspace
-OAI_CONFIG_LIST
-*workspace
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Directorios de trabajo
+workspace/
+
+# Logs
+*.log
+
+# VS Code
+.vscode/
+
+# Otros
 .DS_Store
-logs/*
-chat.py
-content.py
-functions.py
-research.py
-test.py
-exp.py
-imgs/*
-scrape.py
-ui/
-__pycache__

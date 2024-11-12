@@ -1,169 +1,152 @@
 import os
-import openai
 import dotenv
+from autogen import UserProxyAgent, AssistantAgent, GroupChat, GroupChatManager
+from tools import research, write_content, scrape_website
 
-from autogen import config_list_from_json, UserProxyAgent, AssistantAgent, GroupChat, GroupChatManager
-from tools import research, write_content
-
+# Cargar variables de entorno
 dotenv.load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
-BROWSERLESS_API_KEY = os.getenv("BROWSERLESS_API_KEY")
-SERPER_API_KEY = os.getenv("SERPER_API_KEY")
-config_list = config_list_from_json("OAI_CONFIG_LIST")
 
-brand_task = input("Please enter the brand or company name: ")
-user_task = input("Please enter the your goal, brief, or problem statement: ")
+# Configuración para OpenAI
+config_list = [{
+    "model": "gpt-3.5-turbo",
+    "api_key": os.getenv("OPENAI_API_KEY"),
+}]
 
-llm_config_content_assistant = {
+# Configuración del asistente
+llm_config = {
+    "request_timeout": 600,
+    "seed": 42,
     "config_list": config_list,
-    "timeout": 120,
+    "temperature": 0.7,
 }
+
+# Solicitar información al usuario
+brand_task = input("Por favor, ingrese el nombre de la marca o empresa: ")
+user_task = input("Por favor, ingrese su objetivo, brief o planteamiento del problema: ")
+
+# Definición de los agentes
+user_proxy = UserProxyAgent(
+    name="User_Proxy",
+    system_message="Un proxy para interactuar con el usuario.",
+    human_input_mode="TERMINATE",
+    code_execution_config={"last_n_messages": 2, "work_dir": "workspace"},
+    llm_config=llm_config
+)
 
 agency_manager = AssistantAgent(
     name="Agency_Manager",
-    description="Outlines plan for agents.",
-    llm_config={"config_list": config_list},
     system_message=f'''
-    You are the Project Manager, focusing on {brand_task}. 
-    Outline step-by-step tasks for {user_task} with the team. 
-    Act as a communication hub, maintain high-quality deliverables, and regularly update all stakeholders on progress. 
-    Terminate the conversation with "TERMINATE" when all tasks are completed and no further actions are needed.
-    '''
+    Eres el Gerente de Proyecto, enfocado en {brand_task}. 
+    Describe las tareas paso a paso para {user_task} con el equipo. 
+    Actúa como centro de comunicación, mantén entregables de alta calidad y actualiza regularmente a todos los interesados sobre el progreso. 
+    Termina la conversación con "TERMINATE" cuando todas las tareas estén completadas.
+    ''',
+    llm_config=llm_config
 )
 
 agency_researcher = AssistantAgent(
     name="Agency_Researcher",
-    description="Conducts detailed research to provide insights and information vital for executing user-focused tasks.",
-    llm_config=llm_config_content_assistant,
     system_message=f'''
-    As the Lead Researcher, your primary role revolves around {user_task}. 
-    Utilize the research function to gather in-depth insights about market trends, user pain points, and cultural dynamics relevant to our project. 
-    Provide these insights proactively to support the team's strategy and decision-making. In your responses, focus on delivering clear, actionable information. 
-    Conclude your participation with "TERMINATE" once all relevant research has been provided and no further analysis is required.
+    Como Investigador Principal para {brand_task}, investiga sobre {user_task}.
+    Utiliza la función de investigación para recopilar información detallada.
+    Proporciona estos conocimientos de manera proactiva.
     ''',
+    llm_config=llm_config,
     function_map={
         "research": research,
-    }
-)
-
-agency_researcher.register_function(
-    function_map={
-        "research": research,
+        "scrape_website": scrape_website
     }
 )
 
 agency_strategist = AssistantAgent(
     name="Agency_Strategist",
-    description="Develops strategic briefs based on market analysis and research findings, focusing on brand positioning and audience insights.",
-    llm_config={"config_list": config_list},
     system_message=f'''
-    As the Lead Strategist, your key task is to develop strategic briefs for {brand_task}, guided by {user_task} objectives. 
-    Utilize the insights from Agency_Researcher to inform your strategies, focusing on brand positioning, key messaging, and audience targeting. 
-    Ensure your briefs offer unique perspectives and clear direction. 
-    Coordinate closely with the Agency_Manager for alignment with project goals. 
-    Conclude with "TERMINATE" once the strategic direction is established and communicated.
-    '''
+    Como Estratega para {brand_task}, desarrolla estrategias para {user_task}.
+    Analiza la investigación y propón soluciones estratégicas.
+    ''',
+    llm_config=llm_config
 )
 
 agency_writer = AssistantAgent(
-    name="Agency_Copywriter",
-    description="Creates engaging content and narratives aligned with project goals, using insights from research and strategy.",
-    llm_config={"config_list": config_list},
-    system_message="""
-    As the Lead Copywriter, your role is to craft compelling narratives and content.
-    Focus on delivering clear, engaging, and relevant messages that resonate with our target audience.
-    Use your creativity to transform strategic insights and research findings into impactful content.
-    Ensure your writing maintains the brand's voice and aligns with the overall project strategy.
-    Your goal is to create content that effectively communicates our message and engages the audience.
-    """,
-    function_map={
-        "write_content": write_content,
-    },
-)
-
-writing_assistant = AssistantAgent(
-    name="writing_assistant",
-    description="Versatile assistant skilled in researching various topics and crafting well-written content.",
-    llm_config=llm_config_content_assistant,
-    system_message="""
-    As a writing assistant, your role involves using the research function to stay updated on diverse topics and employing the write_content function to produce polished prose.  
-    Ensure your written material is informative and well-structured, catering to the specific needs of the topic.  
-    Conclude your contributions with "TERMINATE" after completing the writing tasks as required.
-    """,
-    function_map={
-        "research": research,
-        "write_content": write_content,
-    },
-)
-
-agency_marketer = AssistantAgent(
-    name="Agency_Marketer",
-    description="Crafts marketing strategies and campaigns attuned to audience needs, utilizing insights from project research and strategy.",
-    llm_config={"config_list": config_list},
+    name="Agency_Writer",
     system_message=f'''
-    As the Lead Marketer, utilize insights and strategies to develop marketing ideas that engage our target audience. 
-    For {user_task}, create campaigns and initiatives that clearly convey our brand's value. 
-    Bridge strategy and execution, ensuring our message is impactful and aligned with our vision. 
-    Collaborate with teams for a unified approach, and coordinate with the Agency Manager for project alignment. 
-    Conclude with "TERMINATE" when your marketing contributions are complete.
-    '''
-)
-
-agency_mediaplanner = AssistantAgent(
-    name="Agency_Media_Planner",
-    description="Identifies optimal media channels and strategies for ad delivery, aligned with project goals.",
-    llm_config={"config_list": config_list},
-    system_message=f'''
-    As the Lead Media Planner, your task is to identify the ideal media mix for delivering our advertising messages, targeting the client's audience. 
-    Utilize the research function to stay updated on current and effective media channels and tactics. 
-    Apply insights from {user_task} to formulate strategies that effectively reach the audience through various media, both traditional and digital. 
-    Collaborate closely with the Agency Manager to ensure your plans are in sync with the broader user strategy. 
-    Conclude your role with "TERMINATE" once the media planning is complete and aligned.
-    '''
-)
-
-agency_director = AssistantAgent(
-    name="Agency_Director",
-    description="Guides the project's creative vision, ensuring uniqueness, excellence, and relevance in all ideas and executions.",
-    llm_config={"config_list": config_list},
-    system_message="""
-    As the Creative Director, your role is to oversee the project's creative aspects. 
-    Critically evaluate all work, ensuring each idea is not just unique but also aligns with our standards of excellence. 
-    Encourage the team to innovate and explore new creative avenues. 
-    Collaborate closely with the Agency_Manager for consistent alignment with the user_proxy. 
-    Conclude your guidance with "TERMINATE" once you've ensured the project's creative integrity and alignment.
-    """,
-)
-
-user_proxy = UserProxyAgent(
-   name="user_proxy",
-   description="Acts as a proxy for the user, capable of executing code and handling user interactions within predefined guidelines.",
-   is_termination_msg=lambda msg: "TERMINATE" in msg["content"] if msg["content"] else False,
-   human_input_mode="TERMINATE",
-   max_consecutive_auto_reply=1,
-   code_execution_config={"work_dir": "/logs"},
-   system_message='Be a helpful assistant.',
-)
-
-groupchat = GroupChat(agents=[
-    user_proxy, agency_manager, agency_researcher, agency_strategist, agency_writer, writing_assistant, agency_marketer, agency_mediaplanner, agency_director], 
-    messages=[], 
-    max_round=20
-)
-
-manager = GroupChatManager(
-    groupchat=groupchat, 
-    llm_config={"config_list": config_list}
-)
-
-user_proxy.register_function(
+    Como Redactor Creativo para {brand_task}, crea contenido para {user_task}.
+    Escribe de manera persuasiva y atractiva.
+    ''',
+    llm_config=llm_config,
     function_map={
-        "research": research,
         "write_content": write_content,
     }
 )
 
+writing_assistant = AssistantAgent(
+    name="Writing_Assistant",
+    system_message=f'''
+    Como Asistente de Redacción para {brand_task}, ayuda a mejorar el contenido para {user_task}.
+    Revisa y optimiza los textos.
+    ''',
+    llm_config=llm_config
+)
+
+agency_marketer = AssistantAgent(
+    name="Agency_Marketer",
+    system_message=f'''
+    Como Especialista en Marketing para {brand_task}, desarrolla estrategias para {user_task}.
+    Propón tácticas de marketing efectivas.
+    ''',
+    llm_config=llm_config
+)
+
+agency_mediaplanner = AssistantAgent(
+    name="Agency_MediaPlanner",
+    system_message=f'''
+    Como Planificador de Medios para {brand_task}, desarrolla planes para {user_task}.
+    Optimiza la distribución en diferentes canales.
+    ''',
+    llm_config=llm_config
+)
+
+agency_director = AssistantAgent(
+    name="Agency_Director",
+    system_message=f'''
+    Como Director Creativo para {brand_task}, supervisa {user_task}.
+    Asegura la calidad y coherencia del trabajo.
+    ''',
+    llm_config=llm_config
+)
+
+# Configuración del chat grupal
+groupchat = GroupChat(
+    agents=[
+        user_proxy, agency_manager, agency_researcher, agency_strategist,
+        agency_writer, writing_assistant, agency_marketer, agency_mediaplanner,
+        agency_director
+    ],
+    messages=[],
+    max_round=20
+)
+
+# Configuración del gestor del chat
+manager = GroupChatManager(
+    groupchat=groupchat,
+    llm_config=llm_config
+)
+
+# Registro de funciones para el proxy de usuario
+user_proxy.register_function(
+    function_map={
+        "research": research,
+        "write_content": write_content,
+        "scrape_website": scrape_website
+    }
+)
+
+# Crear directorio de trabajo si no existe
+if not os.path.exists("workspace"):
+    os.makedirs("workspace")
+
+# Iniciar el chat
 user_proxy.initiate_chat(
-    manager, 
+    manager,
     message=user_task,
 )
